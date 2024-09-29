@@ -284,6 +284,113 @@ func readClassDef(data []byte, size uint32) ([]entity.ClassDef, error) {
 	return classes, nil
 }
 
+// 读取class data
+func readClassDataItem(data []byte) (entity.ClassDataItem, error) {
+
+	classDataItem := entity.ClassDataItem{}
+	start := 0
+	r, l := DecodeULEB128(data[start:])
+	classDataItem.StaticFieldsSize = r
+	start += l
+	r, l = DecodeULEB128(data[start:])
+	classDataItem.InstanceFieldsSize = r
+	start += l
+	r, l = DecodeULEB128(data[start:])
+	classDataItem.DirectMethodsSize = r
+	start += l
+	r, l = DecodeULEB128(data[start:])
+	classDataItem.VirtualMethodsSize = r
+	start += l
+
+	if 16+classDataItem.StaticFieldsSize*8+classDataItem.InstanceFieldsSize*8+classDataItem.DirectMethodsSize*12+classDataItem.VirtualMethodsSize*12 > (uint32)(len(data)) {
+		return entity.ClassDataItem{}, errors.New("invalid size")
+	}
+	classDataItem.StaticFields = make([]entity.DexField, classDataItem.StaticFieldsSize)
+
+	for i := uint32(0); i < classDataItem.StaticFieldsSize; i++ {
+		item := entity.DexField{}
+		item.FieldIdx, l = DecodeULEB128(data[start:])
+		start += l
+		item.AccessFlags, l = DecodeULEB128(data[start:])
+		start += l
+		classDataItem.StaticFields[i] = item
+	}
+	classDataItem.InstanceFields = make([]entity.DexField, classDataItem.InstanceFieldsSize)
+	for i := uint32(0); i < classDataItem.InstanceFieldsSize; i++ {
+		item := entity.DexField{}
+		item.FieldIdx, l = DecodeULEB128(data[start:])
+		start += l
+		item.AccessFlags, l = DecodeULEB128(data[start:])
+		start += l
+		classDataItem.InstanceFields[i] = item
+	}
+	classDataItem.DirectMethods = make([]entity.MethodDef, classDataItem.DirectMethodsSize)
+	for i := uint32(0); i < classDataItem.DirectMethodsSize; i++ {
+		item := entity.MethodDef{}
+		item.MethodIdx, l = DecodeULEB128(data[start:])
+		start += l
+		item.AccessFlags, l = DecodeULEB128(data[start:])
+		start += l
+		item.CodeOff, l = DecodeULEB128(data[start:])
+		start += l
+		classDataItem.DirectMethods[i] = item
+	}
+	classDataItem.VirtualMethods = make([]entity.MethodDef, classDataItem.VirtualMethodsSize)
+	for i := uint32(0); i < classDataItem.VirtualMethodsSize; i++ {
+		item := entity.MethodDef{}
+		item.MethodIdx, l = DecodeULEB128(data[start:])
+		start += l
+		item.AccessFlags, l = DecodeULEB128(data[start:])
+		start += l
+		item.CodeOff, l = DecodeULEB128(data[start:])
+		start += l
+		classDataItem.VirtualMethods[i] = item
+	}
+	return classDataItem, nil
+}
+
+func ReadMethodCode(dex *entity.DexFile, methodId uint32, classdef entity.ClassDef) (byteCodeItem entity.MethodCodeItem, err error) {
+	for methodIdex := range classdef.ClassDataItem.DirectMethods {
+		if classdef.ClassDataItem.DirectMethods[methodIdex].MethodIdx == methodId {
+			offset := classdef.ClassDataItem.DirectMethods[methodIdex].CodeOff - dex.Header.HeaderSize
+			data := dex.Oridata[offset:]
+			item := entity.MethodCodeItem{
+				RegistersSize: binary.LittleEndian.Uint16(data[0:2]),
+				InsSize:       binary.LittleEndian.Uint16(data[2:4]),
+				OutsSize:      binary.LittleEndian.Uint16(data[4:6]),
+				TriesSize:     binary.LittleEndian.Uint16(data[6:8]),
+				DebbugInfoOff: binary.LittleEndian.Uint32(data[8:12]),
+				InsnsSize:     binary.LittleEndian.Uint32(data[12:16]),
+			}
+			item.Insns = make([]uint16, item.InsnsSize)
+			for i := 0; i < int(item.InsnsSize); i++ {
+				item.Insns[i] = binary.LittleEndian.Uint16(data[16+i*2 : 18+i*2])
+			}
+			return item, nil
+		}
+	}
+	for methodIdex := range classdef.ClassDataItem.VirtualMethods {
+		if classdef.ClassDataItem.VirtualMethods[methodIdex].MethodIdx == methodId {
+			offset := classdef.ClassDataItem.VirtualMethods[methodIdex].CodeOff - dex.Header.HeaderSize
+			data := dex.Oridata[offset:]
+			item := entity.MethodCodeItem{
+				RegistersSize: binary.LittleEndian.Uint16(data[0:2]),
+				InsSize:       binary.LittleEndian.Uint16(data[2:4]),
+				OutsSize:      binary.LittleEndian.Uint16(data[4:6]),
+				TriesSize:     binary.LittleEndian.Uint16(data[6:8]),
+				DebbugInfoOff: binary.LittleEndian.Uint32(data[8:12]),
+				InsnsSize:     binary.LittleEndian.Uint32(data[12:16]),
+			}
+			item.Insns = make([]uint16, item.InsnsSize)
+			for i := 0; i < int(item.InsnsSize); i++ {
+				item.Insns[i] = binary.LittleEndian.Uint16(data[16+i*2 : 18+i*2])
+			}
+			return item, nil
+		}
+	}
+	return entity.MethodCodeItem{}, errors.New("not found")
+}
+
 // 读取type ID
 func readTypeIds(data []byte, size uint32) ([]uint32, error) {
 	typeIds := make([]uint32, size)
@@ -430,6 +537,7 @@ func Verify(dex *entity.DexFile) bool {
 	}
 	dex.MethodIds = methods
 
+	dex.ValidDex = true
 	return true
 }
 func convertToDexClassName(className string) string {
@@ -448,6 +556,9 @@ func convertToClassName(className string) string {
 	return dexClassName
 }
 func GetClassDef(fullClassName string, dex *entity.DexFile) (entity.ClassDef, error) {
+	if !dex.ValidDex {
+		return entity.ClassDef{}, fmt.Errorf("not a vaild dex")
+	}
 	classes := dex.ClassDef
 	var dexClassName = convertToDexClassName(fullClassName)
 	for index := range dex.ClassDef {
@@ -463,6 +574,8 @@ func GetClassDef(fullClassName string, dex *entity.DexFile) (entity.ClassDef, er
 			classdef.SupperClassName, _ = ReadStringData(data)
 			classdef.SupperClassName = convertToClassName(classdef.SupperClassName)
 			debugPrint("class id %x name %s\n", classdef.Class_idx_, str)
+			data = dex.Oridata[classdef.Class_data_off_-dex.Header.HeaderSize:]
+			classdef.ClassDataItem, _ = readClassDataItem(data)
 			return classdef, nil
 		}
 	}
@@ -511,7 +624,10 @@ func GetClassAccessString(classDef entity.ClassDef) string {
 	return fmt.Sprintf("%v", accessFlags)
 }
 
-func GetMethodId(method string, classid uint16, dex *entity.DexFile) (entity.MethodIdDef, error) {
+func GetMethodIdDef(method string, classid uint16, dex *entity.DexFile) (entity.MethodIdDef, error) {
+	if !dex.ValidDex {
+		return entity.MethodIdDef{}, fmt.Errorf("not a vaild dex")
+	}
 	methods := dex.MethodIds
 	//var dexClassName = convertToDexClassName(fullClassName)
 	for index := range dex.MethodIds {
@@ -530,4 +646,23 @@ func GetMethodId(method string, classid uint16, dex *entity.DexFile) (entity.Met
 		}
 	}
 	return entity.MethodIdDef{}, fmt.Errorf("not found")
+}
+
+func GetMethodId(method string, classid uint16, dex *entity.DexFile) (uint32, error) {
+	if !dex.ValidDex {
+		return 0, fmt.Errorf("not a vaild dex")
+	}
+	methods := dex.MethodIds
+	for index := range dex.MethodIds {
+		methodef := methods[index]
+		if methodef.Class_idx_ != classid {
+			continue
+		}
+		data := dex.Oridata[dex.StringIds[methodef.Name_idx_]-dex.Header.HeaderSize:]
+		str, err := ReadStringData(data)
+		if err == nil && method == str {
+			return uint32(index), nil
+		}
+	}
+	return 0, fmt.Errorf("not found")
 }

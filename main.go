@@ -42,7 +42,7 @@ func main() {
 	for key, value := range manifestData.Activity {
 		fmt.Printf("Activity:%s isMain: %t\n", key, value)
 	}
-	//tools.WriteManifest("./newFile.xml", manifestData)
+	// tools.WriteManifest("./newFile.xml", manifestData)
 	var dexData = list.New()
 	for strIndex := range config.DexPath {
 		fmt.Print(config.DexPath[strIndex])
@@ -75,10 +75,17 @@ func main() {
 		}
 	}
 	if class.ClassName != "" {
-		methodid, _ := tools.GetMethodId("onCreate", class.Class_idx_, classdex)
-		fmt.Println(methodid.MethodName)
+		methodid, _ := tools.GetMethodId("Test", class.Class_idx_, classdex)
+		fmt.Println("run methond ", methodid)
+		codeItem, _ := tools.ReadMethodCode(classdex, methodid, class)
+
+		vm := tools.VM{
+			Registers: make([]int, codeItem.InsSize), // 10个寄存器
+			PC:        0,
+			Stack:     []int{},
+		}
+		vm.ExecuteBytecode(codeItem.Insns)
 		var app = &entity.MyApplication{}
 		app.OnCreate()
 	}
-
 }

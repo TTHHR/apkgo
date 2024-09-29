@@ -76,11 +76,23 @@ type ClassDef struct {
 	Interfaces_off_    uint32 // file offset to TypeList
 	Source_file_idx_   uint32 // index into string_ids_ for source file name
 	Annotations_off_   uint32 // file offset to annotations_directory_item
-	Class_data_off_    uint32 // file offset to ClassData
+	Class_data_off_    uint32 // file offset to ClassDataItem
 	Static_values_off_ uint32 // file offset to EncodedArray
 	ClassName          string
 	SupperClassName    string
+	ClassDataItem      ClassDataItem
 }
+
+type MethodCodeItem struct {
+	RegistersSize uint16   // 使用的寄存器个数
+	InsSize       uint16   // 参数个数
+	OutsSize      uint16   // 调用其他方法时使用的寄存器个数
+	TriesSize     uint16   // Try/Catch 个数
+	DebbugInfoOff uint32   // 指向调试信息的偏移
+	InsnsSize     uint32   // 指令集个数，以 2 字节为单位
+	Insns         []uint16 // 指令集
+}
+
 type MethodIdDef struct {
 	Class_idx_ uint16 // index into type_ids_ array for defining class
 	Proto_idx_ uint16 // index into proto_ids_ array for method prototype
@@ -93,22 +105,18 @@ type MethodDef struct {
 	CodeOff     uint32 // 指向 DexCode 结构的偏移
 }
 
-// DexClassData 结构体
-type ClassData struct {
-	Header         ClassDataHeader // 指定字段与方法的个数
-	StaticFields   DexField        // 静态字段
-	InstanceFields DexField        // 实例字段
-	DirectMethods  MethodDef       // 直接方法
-	VirtualMethods MethodDef       // 虚方法
+// ClassDataItem 结构体
+type ClassDataItem struct {
+	StaticFieldsSize   uint32      // 静态字段个数
+	InstanceFieldsSize uint32      // 实例字段个数
+	DirectMethodsSize  uint32      // 直接方法个数
+	VirtualMethodsSize uint32      // 虚方法个数
+	StaticFields       []DexField  //静态方法
+	InstanceFields     []DexField  //静态方法
+	DirectMethods      []MethodDef //静态方法
+	VirtualMethods     []MethodDef //静态方法
 }
 
-// DexClassDataHeader 结构体
-type ClassDataHeader struct {
-	StaticFieldsSize   uint32 // 静态字段个数
-	InstanceFieldsSize uint32 // 实例字段个数
-	DirectMethodsSize  uint32 // 直接方法个数
-	VirtualMethodsSize uint32 // 虚方法个数
-}
 type DexField struct {
 	FieldIdx    uint32 // 指向 DexFieldId 的索引
 	AccessFlags uint32 // 访问标志
@@ -144,6 +152,7 @@ type DexFile struct {
 	Header    DexHeader
 	Oridata   []byte
 	FileName  string
+	ValidDex  bool
 	MapList   *MapList
 	StringIds []uint32
 	ClassDef  []ClassDef
