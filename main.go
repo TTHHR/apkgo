@@ -80,12 +80,10 @@ func main() {
 		codeItem, _ := tools.ReadMethodCode(classdex, methodid, class)
 
 		vm := tools.VM{
-			Registers: make([]int, codeItem.InsSize), // 10个寄存器
+			Registers: make([]int, 16),
 			PC:        0,
 			Stack:     []int{},
 		}
 		vm.ExecuteBytecode(codeItem.Insns)
-		var app = &entity.MyApplication{}
-		app.OnCreate()
 	}
 }
